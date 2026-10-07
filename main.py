@@ -1,57 +1,53 @@
-# pip install solders
-import os
-from solders.keypair import Keypair
+Додав запис у `results.csv` для гаманців із балансом більше 0. Записую лише адресу та баланс, без приватного ключа: він і так зберігається в `keys.csv`, а дублювати секрети в другому файлі небезпечно.
 
-print("Генерую нову пару ключів...")
-kp = Keypair()
-
-address = str(kp.pubkey())   # публічна адреса
-private_key = str(kp)        # приватний ключ у base58 (64 байти)
-
-print("Адреса гаманця:", address)
-
-print("Зберігаю у key.csv...")
-fd = os.open("key.csv", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-with os.fdopen(fd, "w") as f:
-    f.write(f"{address};{private_key}\n")
-
-print("Готово. Приватний ключ у key.csv")
-
-
+```python
 # pip install solders requests
-import requests, time
+import os, time, requests
 from solders.keypair import Keypair
 
+KEYS_FILE = "keys.csv"
+RESULTS_FILE = "results.csv"
 RPC = "https://api.mainnet-beta.solana.com"
+
+def new_wallet():
+    kp = Keypair()
+    addr, priv = str(kp.pubkey()), str(kp)
+    fd = os.open(KEYS_FILE, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a") as f:
+        f.write(f"{addr};{priv}\n")
+    return addr
 
 def balance_sol(addr):
     r = requests.post(RPC, json={
         "jsonrpc": "2.0", "id": 1,
         "method": "getBalance", "params": [addr]}, timeout=15)
+    r.raise_for_status()
     return r.json()["result"]["value"] / 1e9
 
-with open("keys.csv") as f:
-    keys = [l.strip() for l in f if l.strip()]
+def save_result(addr, bal):
+    with open(RESULTS_FILE, "a") as out:
+        out.write(f"{addr};{bal}\n")
 
-left = list(keys)
-for key in keys:
-    try:
-        addr = str(Keypair.from_base58_string(key).pubkey())
-        bal = balance_sol(addr)
-    except Exception as e:
-        print("Помилка, пропускаю:", e)
-        continue
-    if bal > 0:
-        with open("results.csv", "a") as out:
-            out.write(f"{addr};{key};{bal}\n")
-    left.remove(key)
-    with open("keys.csv", "w") as f:
-        f.write("\n".join(left) + ("\n" if left else ""))
-    time.sleep(0.2)  # ліміти публічного RPC
+def check_wallets():
+    if not os.path.exists(KEYS_FILE):
+        print("Файлу keys.csv ще немає")
+        return
+    with open(KEYS_FILE) as f:
+        lines = [l.strip() for l in f if l.strip()]
+    for line in lines:
+        addr = line.split(";")[0]
+        try:
+            bal = balance_sol(addr)
+            print(addr, bal, "SOL")
+            if bal > 0:
+                save_result(addr, bal)
+        except Exception as e:
+            print("Помилка для", addr, "-", e)
+        time.sleep(0.5)
 
+if __name__ == "__main__":
+    print("Новий гаманець:", new_wallet())
+    check_wallets()
+```
 
-
-
-
-
-
+Зверніть увагу: при кожному запуску скрипт перевіряє всі гаманці з `keys.csv` наново, тож гаманець із коштами потрапить у `results.csv` повторно. Якщо потрібно записувати кожну адресу лише раз, можу додати перевірку на дублікати.
