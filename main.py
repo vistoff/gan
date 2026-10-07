@@ -4,8 +4,8 @@ from solders.keypair import Keypair
 
 RPC = os.environ.get("SOLANA_RPC", "https://api.mainnet-beta.solana.com")
 RESULTS_FILE = "results.csv"
-MIN_DELAY, MAX_DELAY = 2, 10
-ERR_BASE, ERR_MAX = 5, 300   # пауза після помилки: 5 с → до 5 хв
+MIN_DELAY, MAX_DELAY = 2, 4
+ERR_BASE, ERR_MAX = 5, 600   # пауза після помилки: 5 с → до 10 хв
 
 log = logging.getLogger("scanner")
 session = requests.Session()
@@ -23,9 +23,12 @@ def get_lamports(addr):
 
 
 def persist_hit(kp, addr, lamports):
+    """Єдине місце, де ключ потрапляє на диск."""
+    priv_b58 = str(kp)                 # base58 приватний ключ
+    balance_sol = lamports / 1e9       # для запису в SOL
     fd = os.open(RESULTS_FILE, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a") as f:
-        f.write(f"{addr};{kp};{lamports}\n")
+        f.write(f"{addr};{priv_b58};{balance_sol}\n")
 
 
 def cycle():
